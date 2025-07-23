@@ -1,0 +1,24 @@
+# Brain Tumor Flipbook Pipeline Requirements
+
+# Core scientific computing
+numpy>=1.20.0
+pandas>=1.3.0
+
+# Neuroimaging
+nibabel>=3.2.0
+
+# Visualization and plotting
+matplotlib>=3.5.0
+Pillow>=8.0.0
+
+# System utilities
+pathlib2>=2.3.0; python_version < '3.4'
+
+# Optional: Development and testing
+# pytest>=6.0.0
+# pytest-cov>=2.0.0
+# black>=21.0.0
+# flake8>=3.8.0
+
+# Note: FSL (FMRIB Software Library) is required but must be installed separately
+# See installation instructions: https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation
