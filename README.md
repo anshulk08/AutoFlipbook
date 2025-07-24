@@ -378,10 +378,6 @@ for contrast, result in results['flipbook_results'].items():
     print(f"{contrast} flipbook: {result['html_file']}")
 ```
 
-## 🤝 Contributing
-
-We welcome contributions! Please open an issue or submit a pull request.
-
 ### Development Setup
 ```bash
 git clone https://github.com/anshulk08/AutoFlipbook.git
