@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **AutoFlipbook** is a medical imaging application for generating digital "flipbooks" from longitudinal brain tumor MRI scans. The project implements the methodology from Cho et al. (2024) for enhanced visual assessment of brain tumor progression over time.
 
-**⚠️ Important**: The project has the core registration pipeline implemented in `brain_registration_pipeline.py`, but the flipbook generation module is still missing from the imports.
+**⚠️ Important**: The project has both the core registration pipeline implemented in `brain_registration_pipeline.py` and the flipbook generation module in `brain_flipbook_with_segmentation.py`.
 
 ## Technology Stack
 
@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Installation and Setup
 ```bash
 # Install dependencies
-pip install -r requirements_txt.txt
+pip install -r requirements.txt
 
 # Install FSL (required external dependency)
 # Follow: https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation
@@ -80,10 +80,10 @@ flake8 brain_registration_pipeline.py cli_script.py
 The project has these components:
 - `cli_script.py` - Complete CLI interface with argument parsing
 - `brain_registration_pipeline.py` - **Core registration pipeline implementation**
-- `setup_py.py` - Package configuration for installation
-- `github_readme.md` - Comprehensive documentation
-- `requirements_txt.txt` - Python dependencies
-- `license_file.md` - MIT license
+- `setup.py` - Package configuration for installation
+- `README.md` - Comprehensive documentation
+- `requirements.txt` - Python dependencies
+- `LICENSE` - MIT license
 
 ### Core Implementation Status
 ✅ **Registration Pipeline** (`brain_registration_pipeline.py`) - **IMPLEMENTED**
@@ -93,17 +93,17 @@ The project has these components:
 - Comprehensive error handling and logging
 - `run_brain_registration_and_flipbook_pipeline()` function available
 
-❌ **Missing Flipbook Generation Module**
-The registration pipeline imports a missing flipbook generator on line 414:
+✅ **Flipbook Generation Module** (`brain_flipbook_with_segmentation.py`) - **IMPLEMENTED**
+The registration pipeline imports the flipbook generator:
 ```python
-from your_existing_module import BrainFlipbookGenerator  # Needs implementation
+from brain_flipbook_with_segmentation import BrainFlipbookGenerator
 ```
 
-**Still needs implementation:**
-1. `BrainFlipbookGenerator` class for HTML flipbook creation
+**Implemented features:**
+1. `BrainFlipbookGenerator` class for flipbook creation
 2. Tumor segmentation overlay functionality
-3. Interactive HTML templates with auto-play controls
-4. Multi-contrast visualization coordination
+3. Multi-contrast visualization coordination
+4. PowerPoint and HTML generation support
 
 ### Expected Data Flow
 1. **Input**: NIFTI brain MRI scans organized by timepoints
@@ -122,21 +122,22 @@ from your_existing_module import BrainFlipbookGenerator  # Needs implementation
 ### Current Structure
 ```
 AutoFlipbook/
-├── brain_registration_pipeline.py  # ✅ Main registration pipeline (IMPLEMENTED)  
-├── cli_script.py                   # ✅ Command-line interface (IMPLEMENTED)
-├── setup_py.py                     # ✅ Package setup (IMPLEMENTED)
-├── github_readme.md                # ✅ Documentation (IMPLEMENTED)
-├── requirements_txt.txt            # ✅ Dependencies (IMPLEMENTED)
-└── license_file.md                 # ✅ MIT license (IMPLEMENTED)
+├── brain_registration_pipeline.py     # ✅ Main registration pipeline (IMPLEMENTED)  
+├── brain_flipbook_with_segmentation.py # ✅ Flipbook generator (IMPLEMENTED)
+├── cli_script.py                       # ✅ Command-line interface (IMPLEMENTED)
+├── setup.py                            # ✅ Package setup (IMPLEMENTED)
+├── README.md                           # ✅ Documentation (IMPLEMENTED)
+├── requirements.txt                    # ✅ Dependencies (IMPLEMENTED)
+└── LICENSE                             # ✅ MIT license (IMPLEMENTED)
 ```
 
-### Expected Structure for Flipbook Generator (Missing)
+### Flipbook Generator (Implemented)
 ```
-brain_flipbook_generator.py         # ❌ HTML flipbook creation (NEEDED)
+brain_flipbook_with_segmentation.py # ✅ Flipbook creation (IMPLEMENTED)
 ├── BrainFlipbookGenerator class
-├── HTML template generation
+├── PowerPoint and HTML generation
 ├── Tumor overlay visualization
-└── Interactive controls
+└── Multi-contrast support
 ```
 
 ## Input Data Requirements

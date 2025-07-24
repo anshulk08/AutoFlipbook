@@ -44,7 +44,7 @@ cd brain-tumor-flipbooks
 ### 2. Install Python Dependencies
 
 ```bash
-pip install -r requirements_txt.txt
+pip install -r requirements.txt
 ```
 
 ### 3. Verify FSL Installation
@@ -69,7 +69,7 @@ flirt -version
 
 ### Python Packages
 
-All required packages are listed in `requirements_txt.txt`:
+All required packages are listed in `requirements.txt`:
 
 ```
 numpy>=1.20.0
@@ -377,14 +377,14 @@ for contrast, result in results['flipbook_results'].items():
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please open an issue or submit a pull request.
 
 ### Development Setup
 ```bash
 git clone https://github.com/yourusername/brain-tumor-flipbooks.git
 cd brain-tumor-flipbooks
 pip install -e .
-pip install -r requirements-dev.txt
+pip install -e .[dev]
 ```
 
 ### Running Tests
