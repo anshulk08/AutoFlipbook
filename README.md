@@ -37,14 +37,17 @@ Digital flipbooks enable clinicians to visualize subtle changes in brain tumors 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/anshulk08/brain-tumor-flipbooks.git
-cd brain-tumor-flipbooks
+git clone https://github.com/anshulk08/AutoFlipbook.git
+cd AutoFlipbook
 ```
 
 ### 2. Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
+
+# If you encounter NumPy compatibility issues, use:
+pip install "numpy<2.0"
 ```
 
 ### 3. Verify FSL Installation
@@ -381,8 +384,8 @@ We welcome contributions! Please open an issue or submit a pull request.
 
 ### Development Setup
 ```bash
-git clone https://github.com/anshulk08/brain-tumor-flipbooks.git
-cd brain-tumor-flipbooks
+git clone https://github.com/anshulk08/AutoFlipbook.git
+cd AutoFlipbook
 pip install -e .
 pip install -e .[dev]
 ```
@@ -422,9 +425,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Documentation**: [Wiki](https://github.com/anshulk08/brain-tumor-flipbooks/wiki)
-- **Issues**: [GitHub Issues](https://github.com/anshulk08/brain-tumor-flipbooks/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/anshulk08/brain-tumor-flipbooks/discussions)
+- **Documentation**: [Wiki](https://github.com/anshulk08/AutoFlipbook/wiki)
+- **Issues**: [GitHub Issues](https://github.com/anshulk08/AutoFlipbook/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/anshulk08/AutoFlipbook/discussions)
 
 ---
 
