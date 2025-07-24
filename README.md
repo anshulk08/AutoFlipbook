@@ -226,25 +226,6 @@ When segmentation maps are provided, the pipeline automatically generates:
 - Clinical summary reports
 ```
 
-## 🏥 Clinical Applications
-
-The pipeline is particularly useful for:
-
-### Slow-Growing Tumors
-- **Low-grade gliomas** with subtle progression
-- **Meningiomas** with irregular growth patterns
-- **Mixed response** assessment
-
-### Complex Patterns
-- **Gliomatosis cerebri** infiltrative patterns
-- **Multifocal disease** tracking
-- **Post-operative changes** vs. recurrence
-
-### Treatment Monitoring
-- **Pseudoprogression** identification
-- **Response assessment** in clinical trials
-- **Long-term surveillance** imaging
-
 ## 🔧 Advanced Usage
 
 ### Custom Pipeline Configuration
