@@ -37,7 +37,7 @@ Digital flipbooks enable clinicians to visualize subtle changes in brain tumors 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/brain-tumor-flipbooks.git
+git clone https://github.com/anshulk08/brain-tumor-flipbooks.git
 cd brain-tumor-flipbooks
 ```
 
@@ -422,9 +422,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Documentation**: [Wiki](https://github.com/yourusername/brain-tumor-flipbooks/wiki)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/brain-tumor-flipbooks/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/brain-tumor-flipbooks/discussions)
+- **Documentation**: [Wiki](https://github.com/anshulk08/brain-tumor-flipbooks/wiki)
+- **Issues**: [GitHub Issues](https://github.com/anshulk08/brain-tumor-flipbooks/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/anshulk08/brain-tumor-flipbooks/discussions)
 
 ---
 
