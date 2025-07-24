@@ -191,8 +191,8 @@ class BrainFlipbookGenerator:
     def create_mosaic_view(self, nifti_file, rows=3, cols=5, slice_gap=2, 
                           contrast='T1', window_level=None, window_width=None,
                           colormap='gray', timepoint_info="", segmentation_file=None,
-                          tumor_color='red', tumor_alpha=0.7, show_contour=True,
-                          contour_width=2, tumor_volume_info=None):
+                          tumor_color='red', tumor_alpha=0.5, show_contour=True,
+                          contour_width=2, contour_style='solid', tumor_volume_info=None):
         """
         Create a mosaic view of brain slices with optional tumor segmentation overlay
         
@@ -209,6 +209,7 @@ class BrainFlipbookGenerator:
         - tumor_alpha: Transparency of tumor overlay (0-1)
         - show_contour: Whether to show tumor contour instead of filled overlay
         - contour_width: Width of contour lines
+        - contour_style: Style of contour lines ('solid', 'dashed', 'dotted')
         - tumor_volume_info: Dictionary with tumor volume information
         """
         if not nifti_file or not os.path.exists(nifti_file):
@@ -306,9 +307,10 @@ class BrainFlipbookGenerator:
                     
                     if np.sum(tumor_in_brain) > 15:  # At least 15 pixels of tumor in brain tissue
                         if show_contour:
-                            # Show tumor contour with adaptive threshold
+                            # Show tumor contour with adaptive threshold and line style
+                            linestyles = contour_style if contour_style in ['solid', 'dashed', 'dotted', 'dashdot'] else 'solid'
                             contours = ax.contour(seg_slice, levels=[tumor_threshold], colors=[tumor_color], 
-                                                linewidths=contour_width, alpha=tumor_alpha)
+                                                linewidths=contour_width, linestyles=linestyles, alpha=tumor_alpha)
                         else:
                             # Show filled tumor overlay only where there's brain tissue
                             tumor_overlay = np.zeros((*tumor_in_brain.shape, 4))  # RGBA
@@ -336,8 +338,8 @@ class BrainFlipbookGenerator:
     def create_flipbook_slides(self, contrast_type, rows=3, cols=5, 
                               window_level=None, window_width=None,
                               colormap='gray', tumor_color='red', 
-                              tumor_alpha=0.7, show_contour=True,
-                              contour_width=2):
+                              tumor_alpha=0.5, show_contour=True,
+                              contour_width=2, contour_style='solid'):
         """Create individual slides for the flipbook with tumor overlay"""
         if not self.timepoint_folders:
             self.find_timepoint_folders()
@@ -387,7 +389,7 @@ class BrainFlipbookGenerator:
                 colormap=colormap, timepoint_info=f"Timepoint {timepoint_name}",
                 segmentation_file=seg_file, tumor_color=tumor_color,
                 tumor_alpha=tumor_alpha, show_contour=show_contour,
-                contour_width=contour_width, tumor_volume_info=tumor_volume_info
+                contour_width=contour_width, contour_style=contour_style, tumor_volume_info=tumor_volume_info
             )
             
             if fig is None:
@@ -407,7 +409,7 @@ class BrainFlipbookGenerator:
             print(f"Saved new slide: {slide_file}")
             slide_files.append(slide_file)
         
-        # Print volume progression summary
+        # Print volume progression summary and create volume plot
         if volume_data:
             print(f"\n=== TUMOR VOLUME PROGRESSION ({contrast_type}) ===")
             for vol_info in volume_data:
@@ -420,14 +422,114 @@ class BrainFlipbookGenerator:
                 vol_change = final_vol - initial_vol
                 vol_percent_change = (vol_change / initial_vol) * 100 if initial_vol > 0 else 0
                 print(f"Volume change: {vol_change:+.2f} mL ({vol_percent_change:+.1f}%)")
+                
+                # Create volume progression plot
+                volume_plot_file = self.create_volume_progression_plot(volume_data, contrast_type)
         
         return slide_files
+    
+    def create_volume_progression_plot(self, volume_data, contrast_type='T1CE', output_folder=None):
+        """
+        Create a tumor volume progression plot across timepoints
+        
+        Parameters:
+        - volume_data: List of dictionaries with 'timepoint' and 'volume_ml' keys
+        - contrast_type: Type of contrast for labeling
+        - output_folder: Folder to save the plot (optional)
+        
+        Returns:
+        - Path to saved plot file
+        """
+        if not volume_data or len(volume_data) < 2:
+            print("Warning: Need at least 2 timepoints with volume data to create progression plot")
+            return None
+        
+        # Extract timepoints and volumes
+        timepoints = [vol_info['timepoint'] for vol_info in volume_data]
+        volumes = [vol_info['volume_ml'] for vol_info in volume_data]
+        
+        # Create figure with dark theme
+        plt.style.use('dark_background')
+        fig, ax = plt.subplots(figsize=(10, 6))
+        fig.patch.set_facecolor('black')
+        ax.set_facecolor('black')
+        
+        # Plot volume progression
+        ax.plot(timepoints, volumes, 'o-', linewidth=3, markersize=8, 
+                color='#FF6B6B', markerfacecolor='#FF4444', markeredgecolor='white', markeredgewidth=2)
+        
+        # Fill area under curve for visual appeal
+        ax.fill_between(timepoints, volumes, alpha=0.3, color='#FF6B6B')
+        
+        # Customize plot
+        ax.set_xlabel('Timepoint', fontsize=14, fontweight='bold', color='white')
+        ax.set_ylabel('Tumor Volume (mL)', fontsize=14, fontweight='bold', color='white')
+        ax.set_title(f'Tumor Volume Progression - {contrast_type}', 
+                    fontsize=16, fontweight='bold', color='white', pad=20)
+        
+        # Add volume values as labels on points
+        for i, (tp, vol) in enumerate(zip(timepoints, volumes)):
+            ax.annotate(f'{vol:.1f} mL', 
+                       (tp, vol), 
+                       textcoords="offset points", 
+                       xytext=(0,15), 
+                       ha='center', 
+                       fontsize=10, 
+                       color='white',
+                       fontweight='bold',
+                       bbox=dict(boxstyle="round,pad=0.3", facecolor='black', alpha=0.7))
+        
+        # Calculate and display volume change statistics
+        initial_vol = volumes[0]
+        final_vol = volumes[-1]
+        vol_change = final_vol - initial_vol
+        vol_percent_change = (vol_change / initial_vol) * 100 if initial_vol > 0 else 0
+        
+        # Add statistics text box
+        stats_text = f'Initial: {initial_vol:.1f} mL\nFinal: {final_vol:.1f} mL\nChange: {vol_change:+.1f} mL ({vol_percent_change:+.1f}%)'
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+                fontsize=11, verticalalignment='top',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor='#333333', alpha=0.8),
+                color='white', fontweight='bold')
+        
+        # Style the grid and spines
+        ax.grid(True, alpha=0.3, color='gray', linestyle='--')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('white')
+        ax.spines['bottom'].set_color('white')
+        ax.tick_params(colors='white')
+        
+        # Set reasonable y-axis limits with some padding
+        y_min, y_max = min(volumes), max(volumes)
+        y_range = y_max - y_min
+        if y_range > 0:
+            ax.set_ylim(max(0, y_min - y_range * 0.1), y_max + y_range * 0.1)
+        
+        # Ensure x-axis shows all timepoints
+        ax.set_xticks(timepoints)
+        
+        plt.tight_layout()
+        
+        # Save plot
+        if output_folder is None:
+            output_folder = self.output_folder
+        
+        plot_file = os.path.join(output_folder, f"tumor_volume_progression_{contrast_type}.png")
+        plt.savefig(plot_file, dpi=300, bbox_inches='tight', facecolor='black', edgecolor='none')
+        plt.close(fig)
+        
+        # Reset matplotlib style to default
+        plt.style.use('default')
+        
+        print(f"✅ Saved volume progression plot: {plot_file}")
+        return plot_file
     
     
     def generate_flipbook(self, contrast_type, rows=3, cols=5, 
                          window_level=None, window_width=None,
                          colormap='gray', title=None, tumor_color='red',
-                         tumor_alpha=0.7, show_contour=True, contour_width=2):
+                         tumor_alpha=0.5, show_contour=True, contour_width=2, contour_style='solid'):
         """
         Generate complete flipbook for a specific contrast type with tumor overlay
         
@@ -441,6 +543,7 @@ class BrainFlipbookGenerator:
         - tumor_alpha: Transparency of tumor overlay (0-1)
         - show_contour: If True, show tumor contour; if False, show filled overlay
         - contour_width: Width of contour lines
+        - contour_style: Style of contour lines ('solid', 'dashed', 'dotted')
         """
         if title is None:
             seg_suffix = " with Tumor Overlay" if self.segmentation_folder else ""
@@ -463,7 +566,7 @@ class BrainFlipbookGenerator:
             window_level=window_level, window_width=window_width,
             colormap=colormap, tumor_color=tumor_color,
             tumor_alpha=tumor_alpha, show_contour=show_contour,
-            contour_width=contour_width
+            contour_width=contour_width, contour_style=contour_style
         )
         
         if not slide_files:
@@ -479,8 +582,8 @@ class BrainFlipbookGenerator:
     def generate_all_contrast_flipbooks(self, rows=3, cols=5, 
                                        window_level=None, window_width=None,
                                        colormap='gray', tumor_color='red',
-                                       tumor_alpha=0.7, show_contour=True, 
-                                       contour_width=2):
+                                       tumor_alpha=0.5, show_contour=True, 
+                                       contour_width=2, contour_style='solid'):
         """Generate flipbooks for all available contrast types with tumor overlay"""
         self.find_timepoint_folders()
         self.find_contrast_types()
@@ -507,7 +610,7 @@ class BrainFlipbookGenerator:
                 window_level=window_level, window_width=window_width,
                 colormap=colormap, tumor_color=tumor_color,
                 tumor_alpha=tumor_alpha, show_contour=show_contour,
-                contour_width=contour_width
+                contour_width=contour_width, contour_style=contour_style
             )
             
             # Restore original output folder
@@ -532,8 +635,8 @@ class BrainFlipbookGenerator:
     def generate_all_contrast_flipbooks_slides_only(self, rows=3, cols=5, 
                                                    window_level=None, window_width=None,
                                                    colormap='gray', tumor_color='red',
-                                                   tumor_alpha=0.7, show_contour=True, 
-                                                   contour_width=2, create_pptx=True):
+                                                   tumor_alpha=0.5, show_contour=True, 
+                                                   contour_width=2, contour_style='solid', create_pptx=True):
         """Generate flipbook slides for all available contrast types with optional PPTX output"""
         self.find_timepoint_folders()
         self.find_contrast_types()
@@ -562,7 +665,7 @@ class BrainFlipbookGenerator:
                 window_level=window_level, window_width=window_width,
                 colormap=colormap, tumor_color=tumor_color,
                 tumor_alpha=tumor_alpha, show_contour=show_contour,
-                contour_width=contour_width
+                contour_width=contour_width, contour_style=contour_style
             )
             
             # Generate PowerPoint if requested and available

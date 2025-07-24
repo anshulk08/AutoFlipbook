@@ -31,18 +31,21 @@ def parse_arguments():
         epilog="""
 Examples:
     # Basic usage
-    python run_pipeline.py --raw_folder data/raw_timepoints --output_folder output/
+    python cli_script.py --raw_folder data/raw_timepoints --output_folder output/
 
     # With tumor segmentations
-    python run_pipeline.py --raw_folder data/raw --segmentation_folder data/segs --output_folder output/
+    python cli_script.py --raw_folder data/raw --segmentation_folder data/segs --output_folder output/
 
     # Custom registration and visualization
-    python run_pipeline.py --raw_folder data/raw --registration_dof 12 --tumor_color yellow --show_contour False
+    python cli_script.py --raw_folder data/raw --registration_dof 12 --tumor_color yellow --show_contour False
+
+    # Dotted tumor contours with custom transparency
+    python cli_script.py --raw_folder data/raw --show_contour True --contour_style dotted --tumor_alpha 0.8
 
     # Specify reference timepoint
-    python run_pipeline.py --raw_folder data/raw --reference_timepoint 5885 --output_folder output/
+    python cli_script.py --raw_folder data/raw --reference_timepoint 5885 --output_folder output/
 
-For more information, see: https://github.com/yourusername/brain-tumor-flipbooks
+For more information, see: https://github.com/anshulk08/AutoFlipbook
         """
     )
     
@@ -116,8 +119,8 @@ For more information, see: https://github.com/yourusername/brain-tumor-flipbooks
     parser.add_argument(
         "--tumor_alpha",
         type=float,
-        default=0.7,
-        help="Transparency of tumor overlay (0-1, default: 0.7)"
+        default=0.5,
+        help="Transparency of tumor overlay (0-1, default: 0.5)"
     )
     
     parser.add_argument(
@@ -133,6 +136,14 @@ For more information, see: https://github.com/yourusername/brain-tumor-flipbooks
         type=int,
         default=2,
         help="Width of tumor contour lines (default: 2)"
+    )
+    
+    parser.add_argument(
+        "--contour_style",
+        type=str,
+        choices=["solid", "dashed", "dotted", "dashdot"],
+        default="solid",
+        help="Style of tumor contour lines (default: solid)"
     )
     
     # Mosaic layout parameters
@@ -253,6 +264,7 @@ def main():
             'tumor_alpha': args.tumor_alpha,
             'show_contour': show_contour,
             'contour_width': args.contour_width,
+            'contour_style': args.contour_style,
             'rows': args.rows,
             'cols': args.cols,
             'colormap': args.colormap,

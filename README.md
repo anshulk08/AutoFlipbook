@@ -189,9 +189,10 @@ bias_correct=False          # Bias field correction
 ```python
 # Tumor overlay options
 tumor_color='red'           # 'red', 'yellow', 'cyan', 'green'
-tumor_alpha=0.7             # Transparency (0-1)
+tumor_alpha=0.5             # Transparency (0-1, default: 0.5)
 show_contour=True           # Contour vs filled overlay
 contour_width=2             # Line width for contours
+contour_style='dotted'      # 'solid', 'dashed', 'dotted', 'dashdot'
 
 # Mosaic layout
 rows=3                      # Number of rows
@@ -211,6 +212,18 @@ reference_timepoint=None
 
 # Manual selection
 reference_timepoint="5885"  # Use specific timepoint as reference
+```
+
+### Volume Progression Analysis
+
+When segmentation maps are provided, the pipeline automatically generates:
+
+```python
+# Tumor volume tracking
+- Volume calculations in mL for each timepoint
+- Volume change statistics (absolute and percentage)
+- Progression plots showing volume over time
+- Clinical summary reports
 ```
 
 ## 🏥 Clinical Applications
@@ -364,18 +377,18 @@ results = run_brain_registration_and_flipbook_pipeline(
 
 ### Example 2: Treatment Response Assessment
 ```python
-# Assess response to therapy with volume tracking
+# Assess response to therapy with volume tracking and dotted contours
 results = run_brain_registration_and_flipbook_pipeline(
-    raw_folder="data/treatment_response",
+    raw_folder="data/treatment_response", 
     segmentation_folder="data/tumor_segs",
     tumor_color='yellow',
-    show_contour=False,        # Show filled tumor
+    show_contour=True,         # Show contours
+    contour_style='dotted',    # Dotted lines for subtle visualization
     tumor_alpha=0.6
 )
 
-# Access volume progression data
-for contrast, result in results['flipbook_results'].items():
-    print(f"{contrast} flipbook: {result['html_file']}")
+# Volume progression plots are automatically generated in output folder
+print("Volume progression plots saved as: tumor_volume_progression_*.png")
 ```
 
 ### Development Setup
