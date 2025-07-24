@@ -381,7 +381,7 @@ We welcome contributions! Please open an issue or submit a pull request.
 
 ### Development Setup
 ```bash
-git clone https://github.com/yourusername/brain-tumor-flipbooks.git
+git clone https://github.com/anshulk08/brain-tumor-flipbooks.git
 cd brain-tumor-flipbooks
 pip install -e .
 pip install -e .[dev]
