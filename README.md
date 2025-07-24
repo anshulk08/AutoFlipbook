@@ -415,20 +415,3 @@ If you use this pipeline in your research, please cite:
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **UCLA Brain Tumor Imaging Laboratory** for the original methodology
-- **FSL team** for the FLIRT registration tool
-- **NiBabel developers** for Python neuroimaging tools
-- **Contributors** who helped improve this pipeline
-
-## 📞 Support
-
-- **Documentation**: [Wiki](https://github.com/anshulk08/AutoFlipbook/wiki)
-- **Issues**: [GitHub Issues](https://github.com/anshulk08/AutoFlipbook/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/anshulk08/AutoFlipbook/discussions)
-
----
-
-**⚠️ Disclaimer**: This software is for research purposes only and is not intended for clinical diagnosis or treatment decisions. Always consult with qualified medical professionals for clinical applications.
