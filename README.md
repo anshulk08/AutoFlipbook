@@ -315,7 +315,7 @@ results = run_brain_registration_and_flipbook_pipeline(
 
 1. **Check logs** in the `logs/` output folder
 2. **Verify FSL installation**: `flirt -version`
-3. **Test with sample data** (see `examples/` folder)
+3. **Test with sample data** (see `examples/FL_flipbook/` folder)
 4. **Open an issue** on GitHub with error logs
 
 ## 📊 Performance
@@ -343,6 +343,12 @@ This pipeline implements the methodology described in:
 - **Clinical validation**: Based on published methodology
 
 ## 📈 Examples
+
+### Sample Output
+
+![AutoFlipbook Animation](examples/FL_flipbook/flipbook_animation.gif)
+
+*Example FLAIR flipbook showing tumor progression across three timepoints. The animation demonstrates how subtle changes become apparent through sequential visualization.*
 
 ### Example 1: Low-Grade Glioma Monitoring
 ```python
