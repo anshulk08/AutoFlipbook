@@ -45,6 +45,9 @@ Examples:
     # Specify reference timepoint
     python cli_script.py --raw_folder data/raw --reference_timepoint 5885 --output_folder output/
 
+    # Skip quantitative assessment for faster execution
+    python cli_script.py --raw_folder data/raw --skip_assessment --output_folder output/
+
 For more information, see: https://github.com/anshulk08/AutoFlipbook
         """
     )
@@ -176,6 +179,12 @@ For more information, see: https://github.com/anshulk08/AutoFlipbook
     )
     
     parser.add_argument(
+        "--skip_assessment",
+        action="store_true",
+        help="Skip quantitative registration assessment (faster execution)"
+    )
+    
+    parser.add_argument(
         "--dry_run",
         action="store_true",
         help="Show what would be done without actually running the pipeline"
@@ -283,6 +292,7 @@ def main():
             registration_dof=args.registration_dof,
             skull_strip=args.skull_strip,
             bias_correct=args.bias_correct,
+            run_assessment=not args.skip_assessment,  # Run assessment unless explicitly skipped
             **flipbook_kwargs
         )
         

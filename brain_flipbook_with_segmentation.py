@@ -37,18 +37,38 @@ class BrainFlipbookGenerator:
         os.makedirs(output_folder, exist_ok=True)
         
     def find_timepoint_folders(self):
-        """Find all timepoint folders (numeric folder names)"""
+        """Find all timepoint folders (numeric or date format)"""
         folders = []
+        date_pattern = re.compile(r'^(\d{4})-(\d{2})-(\d{2})$')
+        
         for item in os.listdir(self.registered_folder):
             item_path = os.path.join(self.registered_folder, item)
-            if os.path.isdir(item_path) and item.isdigit():
-                folders.append({
-                    'folder': item_path,
-                    'timepoint': int(item),
-                    'folder_name': item
-                })
+            
+            if os.path.isdir(item_path):
+                # Check if it's a numeric folder name (legacy support)
+                if item.isdigit():
+                    folders.append({
+                        'folder': item_path,
+                        'timepoint': int(item),
+                        'folder_name': item,
+                        'is_date': False
+                    })
+                # Check if it's a date format (YYYY-MM-DD)
+                elif date_pattern.match(item):
+                    try:
+                        # Parse date and convert to timestamp for sorting
+                        date_obj = datetime.strptime(item, '%Y-%m-%d')
+                        folders.append({
+                            'folder': item_path,
+                            'timepoint': int(date_obj.timestamp()),
+                            'folder_name': item,
+                            'is_date': True,
+                            'date_obj': date_obj
+                        })
+                    except ValueError:
+                        continue
         
-        # Sort by timepoint number
+        # Sort by timepoint (timestamp for dates, numeric for legacy)
         folders.sort(key=lambda x: x['timepoint'])
         self.timepoint_folders = folders
         
@@ -67,8 +87,10 @@ class BrainFlipbookGenerator:
             
             for file in nifti_files:
                 basename = os.path.basename(file)
-                # Parse contrast type from filename like "6070_T1_to_5885T1CE.nii"
-                match = re.search(r'^\d+_([^_]+)_to_', basename)
+                # Parse contrast type from filename patterns:
+                # Legacy: "6070_T1_to_5885T1CE.nii"
+                # Date-based: "2000-03-25_FL_to_2000-03-25FL.nii.gz"
+                match = re.search(r'^(?:\d+|\d{4}-\d{2}-\d{2})_([^_]+)_to_', basename)
                 if match:
                     contrast_types.add(match.group(1))
         
@@ -265,9 +287,11 @@ class BrainFlipbookGenerator:
             ax = fig.add_subplot(gs[row, col])
             ax.set_facecolor('black')  # Make axes (subplot) background black
             
-            # Get slice and flip for proper orientation
+            # Get slice in proper neurological orientation (LPS)
+            # For axial slices: transpose and flip for radiological convention
             slice_data = data[:, :, slice_idx].T
-            slice_data = np.flipud(slice_data)
+            # Remove the flipud to fix upside-down issue
+            # slice_data = np.flipud(slice_data)  # Commented out to fix orientation
             
             # Display brain slice
             im = ax.imshow(slice_data, cmap=colormap, vmin=vmin, vmax=vmax, 
@@ -276,7 +300,7 @@ class BrainFlipbookGenerator:
             # Add tumor overlay if segmentation is available
             if seg_data is not None:
                 seg_slice = seg_data[:, :, slice_idx].T
-                seg_slice = np.flipud(seg_slice)
+                # seg_slice = np.flipud(seg_slice)  # Commented out to match brain orientation
                 
                 # Much more robust tumor detection
                 # First, check the actual range of values in this slice
@@ -322,6 +346,20 @@ class BrainFlipbookGenerator:
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_title(f'Slice {slice_idx}', fontsize=8, color='white')
+            
+            # Add LPS orientation annotations (only on first slice for clarity)
+            if i == 0:
+                # Left-Right annotation (horizontal)
+                ax.text(0.02, 0.5, 'L', transform=ax.transAxes, 
+                       fontsize=12, color='yellow', ha='left', va='center', fontweight='bold')
+                ax.text(0.98, 0.5, 'R', transform=ax.transAxes, 
+                       fontsize=12, color='yellow', ha='right', va='center', fontweight='bold')
+                
+                # Posterior-Anterior annotation (vertical) 
+                ax.text(0.5, 0.02, 'P', transform=ax.transAxes, 
+                       fontsize=12, color='yellow', ha='center', va='bottom', fontweight='bold')
+                ax.text(0.5, 0.98, 'A', transform=ax.transAxes, 
+                       fontsize=12, color='yellow', ha='center', va='top', fontweight='bold')
         
         # Add title with timepoint info, segmentation status, and tumor volume
         seg_status = " (with tumor overlay)" if seg_data is not None else ""

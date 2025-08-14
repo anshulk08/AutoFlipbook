@@ -85,16 +85,36 @@ class BrainRegistrationPipeline:
     def find_timepoint_folders(self):
         """Find all timepoint folders and their contents"""
         folders = []
+        date_pattern = re.compile(r'^(\d{4})-(\d{2})-(\d{2})$')
+        
         for item in os.listdir(self.raw_folder):
             item_path = os.path.join(self.raw_folder, item)
-            if os.path.isdir(item_path) and item.isdigit():
-                folders.append({
-                    'folder': item_path,
-                    'timepoint': int(item),
-                    'folder_name': item
-                })
+            
+            if os.path.isdir(item_path):
+                # Check if it's a numeric folder name (legacy support)
+                if item.isdigit():
+                    folders.append({
+                        'folder': item_path,
+                        'timepoint': int(item),
+                        'folder_name': item,
+                        'is_date': False
+                    })
+                # Check if it's a date format (YYYY-MM-DD)
+                elif date_pattern.match(item):
+                    try:
+                        # Parse date and convert to timestamp for sorting
+                        date_obj = datetime.strptime(item, '%Y-%m-%d')
+                        folders.append({
+                            'folder': item_path,
+                            'timepoint': int(date_obj.timestamp()),
+                            'folder_name': item,
+                            'is_date': True,
+                            'date_obj': date_obj
+                        })
+                    except ValueError:
+                        continue
         
-        # Sort by timepoint number
+        # Sort by timepoint (timestamp for dates, numeric for legacy)
         folders.sort(key=lambda x: x['timepoint'])
         self.timepoint_folders = folders
         
@@ -439,7 +459,7 @@ class BrainRegistrationPipeline:
         return results
     
     def run_full_pipeline(self, segmentation_folder=None, registration_dof=6, 
-                         skull_strip=False, bias_correct=False, **flipbook_kwargs):
+                         skull_strip=False, bias_correct=False, run_assessment=True, **flipbook_kwargs):
         """
         Run the complete pipeline: registration + flipbook generation
         Following the methodology from Cho et al. (2024) Neuro-Oncology
@@ -449,6 +469,7 @@ class BrainRegistrationPipeline:
         - registration_dof: 6 (rigid, preserves tumor size) or 12 (affine) 
         - skull_strip: Optional skull stripping (may remove important structures)
         - bias_correct: Optional bias field correction
+        - run_assessment: Run quantitative registration quality assessment (default: True)
         - **flipbook_kwargs: Additional arguments for flipbook generation
         """
         print("=== AUTOMATED BRAIN REGISTRATION AND FLIPBOOK PIPELINE ===")
@@ -483,14 +504,39 @@ class BrainRegistrationPipeline:
                 total_slides = sum(result.get('slide_count', 0) for result in flipbook_results.values())
                 print(f"  Generated {total_slides} total slides for {len(flipbook_results)} contrast types")
             
+            # Step 3: Run quantitative assessment (optional)
+            assessment_results = None
+            if run_assessment:
+                try:
+                    print("\n=== QUANTITATIVE REGISTRATION ASSESSMENT ===")
+                    from registration_assessment import RegistrationAssessment
+                    
+                    assessment_folder = os.path.join(self.output_base_folder, "assessment")
+                    assessment = RegistrationAssessment(
+                        registered_folder=self.registered_folder,
+                        segmentation_folder=segmentation_folder,
+                        output_folder=assessment_folder
+                    )
+                    
+                    # Run comprehensive assessment for all available contrasts
+                    assessment_results = assessment.run_comprehensive_assessment()
+                    
+                    print(f"- Assessment results: {assessment_folder}")
+                    
+                except Exception as e:
+                    print(f"Warning: Assessment failed: {e}")
+                    print("Continuing without assessment...")
+            
             return {
                 'registration_results': registration_results,
                 'flipbook_results': flipbook_results,
+                'assessment_results': assessment_results,
                 'output_folders': {
                     'registered': self.registered_folder,
                     'matrices': self.matrices_folder,
                     'flipbooks': self.flipbooks_folder,
-                    'logs': self.logs_folder
+                    'logs': self.logs_folder,
+                    'assessment': os.path.join(self.output_base_folder, "assessment") if run_assessment else None
                 }
             }
             
@@ -508,6 +554,7 @@ def run_brain_registration_and_flipbook_pipeline(raw_folder,
                                                 registration_dof=6,
                                                 skull_strip=False,
                                                 bias_correct=False,
+                                                run_assessment=True,
                                                 **flipbook_kwargs):
     """
     Run the complete automated pipeline following Cho et al. (2024) methodology
@@ -543,6 +590,7 @@ def run_brain_registration_and_flipbook_pipeline(raw_folder,
         registration_dof=registration_dof,
         skull_strip=skull_strip,
         bias_correct=bias_correct,
+        run_assessment=run_assessment,
         **flipbook_kwargs
     )
 
