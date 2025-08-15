@@ -40,6 +40,12 @@ python cli_script.py --raw_folder data/raw --registration_dof 12 --tumor_color y
 
 # Skip quantitative assessment (faster)
 python cli_script.py --raw_folder data/raw --skip_assessment --output_folder output/
+
+# Enhanced visualization features
+python cli_script.py --raw_folder data/raw --segmentation_folder data/segs --gif_duration 1500 --summary_slices 3
+
+# Skip specific features
+python cli_script.py --raw_folder data/raw --no_summary_slide --no_animated_gif
 ```
 
 ### Running Assessment Only
@@ -159,6 +165,12 @@ segmentations/
 - `contour_style`: 'solid', 'dashed', 'dotted', 'dashdot'
 - `rows`, `cols`: Mosaic layout dimensions (default: 3x5)
 
+### Enhanced Visualization Features
+- `create_summary_slide`: Boolean to create tumor-focused summary slide (default: True)
+- `create_animated_gif`: Boolean to create animated GIF flipbook (default: True)
+- `summary_slices`: Number of central tumor slices in summary slide (default: 4)
+- `gif_duration`: Duration per frame in animated GIF in milliseconds (default: 1000)
+
 ### Assessment Parameters
 - `colormap_style`: 'red_blue', 'viridis', 'plasma', 'coolwarm' for difference maps
 - Various metrics: Pearson correlation, normalized mutual information, SSIM, Dice coefficient
@@ -170,7 +182,7 @@ The pipeline requires FSL FLIRT to be available in the system PATH. The `setup_f
 ## File Formats
 
 - **Input**: NIFTI format (.nii or .nii.gz) - neuroimaging standard
-- **Output**: HTML flipbooks, PNG images, transformation matrices (.mat)
+- **Output**: HTML flipbooks, PNG slide images, tumor summary slides, animated GIFs, transformation matrices (.mat)
 - **Logs**: Text files with registration details
 
 ## Dependencies

@@ -48,6 +48,12 @@ Examples:
     # Skip quantitative assessment for faster execution
     python cli_script.py --raw_folder data/raw --skip_assessment --output_folder output/
 
+    # Customize new visualization features
+    python cli_script.py --raw_folder data/raw --no_summary_slide --gif_duration 1500 --summary_slices 3
+
+    # Skip animated GIF creation
+    python cli_script.py --raw_folder data/raw --no_animated_gif --output_folder output/
+
 For more information, see: https://github.com/anshulk08/AutoFlipbook
         """
     )
@@ -171,6 +177,33 @@ For more information, see: https://github.com/anshulk08/AutoFlipbook
         help="Colormap for brain images (default: gray)"
     )
     
+    # New visualization features
+    parser.add_argument(
+        "--no_summary_slide",
+        action="store_true",
+        help="Skip creating tumor-focused summary slide (default: creates summary)"
+    )
+    
+    parser.add_argument(
+        "--no_animated_gif",
+        action="store_true", 
+        help="Skip creating animated GIF (default: creates GIF)"
+    )
+    
+    parser.add_argument(
+        "--gif_duration",
+        type=int,
+        default=1000,
+        help="Duration per frame in animated GIF in milliseconds (default: 1000)"
+    )
+    
+    parser.add_argument(
+        "--summary_slices",
+        type=int,
+        default=4,
+        help="Number of central tumor slices in summary slide (default: 4)"
+    )
+    
     # Utility arguments
     parser.add_argument(
         "--verbose",
@@ -277,6 +310,10 @@ def main():
             'rows': args.rows,
             'cols': args.cols,
             'colormap': args.colormap,
+            'create_summary_slide': not args.no_summary_slide,  # Create unless explicitly disabled
+            'create_animated_gif': not args.no_animated_gif,    # Create unless explicitly disabled
+            'gif_duration': args.gif_duration,
+            'summary_slices': args.summary_slices,
         }
         
         print("🚀 Starting Brain Tumor Flipbook Pipeline...")

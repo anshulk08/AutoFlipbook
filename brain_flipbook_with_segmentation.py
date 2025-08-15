@@ -588,11 +588,375 @@ class BrainFlipbookGenerator:
         print(f"✅ Saved volume progression plot: {plot_file}")
         return plot_file
     
+    def create_tumor_focused_summary_slide(self, contrast_type, num_slices=4,
+                                         window_level=None, window_width=None,
+                                         colormap='gray', tumor_color='red',
+                                         tumor_alpha=0.5, show_contour=True,
+                                         contour_width=2, contour_style='solid'):
+        """
+        Create a summary slide showing tumor progression across timepoints
+        
+        Shows 3-4 central tumor slices as rows, with each timepoint as a column.
+        This provides a focused view of tumor evolution over time.
+        
+        Parameters:
+        - contrast_type: Type of contrast (T1, T2, T1CE, etc.)
+        - num_slices: Number of central tumor slices to show (3-4 recommended)
+        - Other parameters: Same as create_mosaic_view
+        
+        Returns:
+        - Path to saved summary slide image
+        """
+        if not self.timepoint_folders:
+            self.find_timepoint_folders()
+            
+        if not self.contrast_types:
+            self.find_contrast_types()
+            
+        if contrast_type not in self.contrast_types:
+            print(f"Error: Contrast type '{contrast_type}' not found.")
+            return None
+            
+        print(f"Creating tumor-focused summary slide for {contrast_type}...")
+        
+        # Collect all tumor data and find central slices
+        timepoint_data = []
+        all_tumor_slices = set()
+        
+        for tp_folder in self.timepoint_folders:
+            timepoint_name = tp_folder['folder_name']
+            
+            # Get the NIFTI file for this timepoint and contrast
+            nifti_file = self.get_file_for_timepoint_and_contrast(tp_folder, contrast_type)
+            if not nifti_file:
+                continue
+                
+            # Get segmentation file
+            seg_file = self.get_segmentation_file(tp_folder)
+            if not seg_file:
+                continue
+                
+            # Load segmentation to find tumor slices
+            try:
+                seg_img = nib.load(seg_file)
+                seg_data = seg_img.get_fdata()
+                
+                # Find slices with tumor
+                tumor_slices = []
+                for z in range(seg_data.shape[2]):
+                    if np.any(seg_data[:, :, z] > 0):
+                        tumor_slices.append(z)
+                        all_tumor_slices.add(z)
+                
+                if tumor_slices:
+                    timepoint_data.append({
+                        'name': timepoint_name,
+                        'nifti_file': nifti_file,
+                        'seg_file': seg_file,
+                        'tumor_slices': tumor_slices,
+                        'folder': tp_folder
+                    })
+                    
+            except Exception as e:
+                print(f"Warning: Could not process segmentation for {timepoint_name}: {e}")
+                continue
+        
+        if not timepoint_data or not all_tumor_slices:
+            print("No tumor data found for summary slide")
+            return None
+            
+        # Select central tumor slices
+        sorted_tumor_slices = sorted(list(all_tumor_slices))
+        if len(sorted_tumor_slices) >= num_slices:
+            # Take evenly spaced slices from the middle portion
+            start_idx = len(sorted_tumor_slices) // 4
+            end_idx = 3 * len(sorted_tumor_slices) // 4
+            middle_slices = sorted_tumor_slices[start_idx:end_idx]
+            
+            if len(middle_slices) >= num_slices:
+                step = len(middle_slices) // num_slices
+                selected_slices = [middle_slices[i * step] for i in range(num_slices)]
+            else:
+                selected_slices = middle_slices
+        else:
+            selected_slices = sorted_tumor_slices
+            
+        selected_slices = selected_slices[:num_slices]  # Ensure we don't exceed num_slices
+        
+        print(f"Selected tumor slices: {selected_slices}")
+        
+        # Create the summary figure
+        # Rows = slices, Columns = timepoints (as requested)
+        num_timepoints = len(timepoint_data)
+        fig_width = num_timepoints * 4  # 4 inches per timepoint column
+        fig_height = num_slices * 3     # 3 inches per slice row
+        
+        fig, axes = plt.subplots(num_slices, num_timepoints, 
+                                figsize=(fig_width, fig_height), 
+                                facecolor='black')
+        
+        # Handle single row or column cases
+        if num_slices == 1:
+            axes = axes.reshape(1, -1)
+        elif num_timepoints == 1:
+            axes = axes.reshape(-1, 1)
+            
+        fig.suptitle(f'Tumor Evolution Summary - {contrast_type}', 
+                     fontsize=20, color='white', y=0.98)
+        
+        # Process each slice (row) and timepoint (column)
+        for row, slice_idx in enumerate(selected_slices):
+            for col, tp_data in enumerate(timepoint_data):
+                # Load brain image for this timepoint
+                img = nib.load(tp_data['nifti_file'])
+                data = img.get_fdata()
+                
+                # Load segmentation for this timepoint
+                seg_img = nib.load(tp_data['seg_file'])
+                seg_data = seg_img.get_fdata()
+                
+                # Calculate tumor volume for this timepoint (for labeling)
+                tumor_volume_info = self.calculate_tumor_volume(tp_data['seg_file'])
+                volume_text = ""
+                if tumor_volume_info:
+                    volume_text = f" ({tumor_volume_info['volume_ml']:.1f} mL)"
+                ax = axes[row, col]
+                ax.set_facecolor('black')
+                
+                # Get brain slice
+                slice_data = data[:, :, slice_idx].T
+                
+                # Set windowing - use the same approach as create_mosaic_view
+                if window_level is not None and window_width is not None:
+                    vmin = window_level - window_width / 2
+                    vmax = window_level + window_width / 2
+                else:
+                    # Auto-windowing using percentile approach
+                    vmin, vmax = np.percentile(data[data > 0], [2, 98])
+                
+                # Display brain slice
+                im = ax.imshow(slice_data, cmap=colormap, vmin=vmin, vmax=vmax, 
+                              aspect='equal', origin='lower')
+                
+                # Add tumor overlay
+                seg_slice = seg_data[:, :, slice_idx].T
+                if np.any(seg_slice > 0):
+                    if show_contour:
+                        # Create contour overlay - use same approach as create_mosaic_view
+                        tumor_threshold = 0.5
+                        linestyles = contour_style if contour_style in ['solid', 'dashed', 'dotted', 'dashdot'] else 'solid'
+                        contours = ax.contour(seg_slice, levels=[tumor_threshold], colors=[tumor_color], 
+                                            linewidths=contour_width, linestyles=linestyles, alpha=tumor_alpha)
+                    else:
+                        # Create filled overlay - use same approach as create_mosaic_view  
+                        from matplotlib.colors import to_rgba
+                        tumor_mask = seg_slice > 0
+                        tumor_overlay = np.zeros((*tumor_mask.shape, 4))  # RGBA
+                        tumor_rgba = to_rgba(tumor_color, alpha=tumor_alpha)
+                        tumor_overlay[tumor_mask] = tumor_rgba
+                        ax.imshow(tumor_overlay, aspect='equal', origin='lower', interpolation='nearest')
+                
+                # Remove ticks and add labels
+                ax.set_xticks([])
+                ax.set_yticks([])
+                
+                # Add timepoint label on top row (columns are timepoints)
+                if row == 0:
+                    ax.text(0.5, 1.05, f'{tp_data["name"]}{volume_text}', 
+                           transform=ax.transAxes, fontsize=10, color='white', 
+                           ha='center', va='bottom', fontweight='bold')
+                
+                # Add slice number on first column (rows are slices)
+                if col == 0:
+                    ax.text(-0.1, 0.5, f'Slice {slice_idx}', 
+                           transform=ax.transAxes, rotation=90,
+                           fontsize=12, color='white', ha='right', va='center',
+                           fontweight='bold')
+        
+        # Adjust layout
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.95, hspace=0.1, wspace=0.05)
+        
+        # Save the summary slide
+        summary_file = os.path.join(self.output_folder, f"tumor_summary_{contrast_type}.png")
+        plt.savefig(summary_file, dpi=300, bbox_inches='tight', 
+                   facecolor='black', edgecolor='none')
+        plt.close(fig)
+        
+        print(f"✅ Created tumor-focused summary slide: {summary_file}")
+        return summary_file
+    
+    def create_animated_gif(self, slide_files, output_path, duration=800, loop=0):
+        """
+        Create an animated GIF from flipbook slides
+        
+        Parameters:
+        - slide_files: List of paths to slide image files
+        - output_path: Path for output GIF file
+        - duration: Duration of each frame in milliseconds (default 800ms = 0.8s)
+        - loop: Number of loops (0 = infinite loop)
+        
+        Returns:
+        - Path to created GIF file or None if failed
+        """
+        if not slide_files:
+            print("No slide files provided for GIF creation")
+            return None
+            
+        try:
+            from PIL import Image
+            
+            # Load all images
+            images = []
+            for slide_file in slide_files:
+                if os.path.exists(slide_file):
+                    img = Image.open(slide_file)
+                    # Convert to RGB if necessary (for GIF compatibility)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images.append(img)
+                else:
+                    print(f"Warning: Slide file not found: {slide_file}")
+            
+            if not images:
+                print("No valid images found for GIF creation")
+                return None
+            
+            # Create animated GIF
+            print(f"Creating animated GIF with {len(images)} frames...")
+            images[0].save(
+                output_path,
+                save_all=True,
+                append_images=images[1:],
+                duration=duration,
+                loop=loop,
+                optimize=True
+            )
+            
+            print(f"✅ Created animated GIF: {output_path}")
+            return output_path
+            
+        except ImportError:
+            print("Error: PIL/Pillow not available for GIF creation")
+            return None
+        except Exception as e:
+            print(f"Error creating GIF: {e}")
+            return None
+    
+    def create_enhanced_animated_gif(self, slide_files, output_path, duration=1000, 
+                                   loop=0, add_progress_bar=True, add_frame_numbers=True):
+        """
+        Create an enhanced animated GIF with optional progress indicators
+        
+        Parameters:
+        - slide_files: List of paths to slide image files
+        - output_path: Path for output GIF file
+        - duration: Duration of each frame in milliseconds
+        - loop: Number of loops (0 = infinite)
+        - add_progress_bar: Add a progress bar at the bottom
+        - add_frame_numbers: Add frame numbers to each slide
+        
+        Returns:
+        - Path to created GIF file or None if failed
+        """
+        if not slide_files:
+            print("No slide files provided for GIF creation")
+            return None
+            
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            
+            # Load and process all images
+            processed_images = []
+            total_frames = len(slide_files)
+            
+            for i, slide_file in enumerate(slide_files):
+                if not os.path.exists(slide_file):
+                    print(f"Warning: Slide file not found: {slide_file}")
+                    continue
+                    
+                img = Image.open(slide_file)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Create a copy to modify
+                enhanced_img = img.copy()
+                draw = ImageDraw.Draw(enhanced_img)
+                
+                # Add frame number if requested
+                if add_frame_numbers:
+                    frame_text = f"{i+1}/{total_frames}"
+                    try:
+                        # Try to use a larger font
+                        font = ImageFont.truetype("arial.ttf", 24)
+                    except:
+                        # Fall back to default font
+                        font = ImageFont.load_default()
+                    
+                    # Add frame number in top-right corner
+                    text_bbox = draw.textbbox((0, 0), frame_text, font=font)
+                    text_width = text_bbox[2] - text_bbox[0]
+                    text_height = text_bbox[3] - text_bbox[1]
+                    
+                    x = enhanced_img.width - text_width - 20
+                    y = 20
+                    
+                    # Add background rectangle for better visibility
+                    draw.rectangle([x-5, y-5, x+text_width+5, y+text_height+5], 
+                                 fill=(0, 0, 0, 128))
+                    draw.text((x, y), frame_text, fill=(255, 255, 255), font=font)
+                
+                # Add progress bar if requested
+                if add_progress_bar:
+                    bar_height = 8
+                    bar_y = enhanced_img.height - bar_height - 10
+                    bar_width = enhanced_img.width - 40
+                    bar_x = 20
+                    
+                    # Background bar
+                    draw.rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], 
+                                 fill=(50, 50, 50))
+                    
+                    # Progress fill
+                    progress = (i + 1) / total_frames
+                    fill_width = int(bar_width * progress)
+                    draw.rectangle([bar_x, bar_y, bar_x + fill_width, bar_y + bar_height], 
+                                 fill=(0, 150, 255))
+                
+                processed_images.append(enhanced_img)
+            
+            if not processed_images:
+                print("No valid images found for GIF creation")
+                return None
+            
+            # Create animated GIF
+            print(f"Creating enhanced animated GIF with {len(processed_images)} frames...")
+            processed_images[0].save(
+                output_path,
+                save_all=True,
+                append_images=processed_images[1:],
+                duration=duration,
+                loop=loop,
+                optimize=True
+            )
+            
+            print(f"✅ Created enhanced animated GIF: {output_path}")
+            return output_path
+            
+        except ImportError:
+            print("Error: PIL/Pillow not available for GIF creation")
+            return None
+        except Exception as e:
+            print(f"Error creating enhanced GIF: {e}")
+            return None
+    
     
     def generate_flipbook(self, contrast_type, rows=3, cols=5, 
                          window_level=None, window_width=None,
                          colormap='gray', title=None, tumor_color='red',
-                         tumor_alpha=0.5, show_contour=True, contour_width=2, contour_style='solid'):
+                         tumor_alpha=0.5, show_contour=True, contour_width=2, contour_style='solid',
+                         create_summary_slide=True, create_animated_gif=True, 
+                         gif_duration=1000, summary_slices=4):
         """
         Generate complete flipbook for a specific contrast type with tumor overlay
         
@@ -607,6 +971,10 @@ class BrainFlipbookGenerator:
         - show_contour: If True, show tumor contour; if False, show filled overlay
         - contour_width: Width of contour lines
         - contour_style: Style of contour lines ('solid', 'dashed', 'dotted')
+        - create_summary_slide: If True, create tumor-focused summary slide (default: True)
+        - create_animated_gif: If True, create animated GIF (default: True) 
+        - gif_duration: Duration per frame in animated GIF in milliseconds (default: 1000)
+        - summary_slices: Number of central tumor slices in summary slide (default: 4)
         """
         if title is None:
             seg_suffix = " with Tumor Overlay" if self.segmentation_folder else ""
@@ -640,13 +1008,68 @@ class BrainFlipbookGenerator:
         print(f"- {len(slide_files)} slides created")
         print(f"- Individual slides saved in: {self.output_folder}")
         
-        return slide_files
+        # Create tumor-focused summary slide (the radiologist-recommended feature)
+        summary_slide = None
+        if create_summary_slide and self.segmentation_folder:
+            print(f"\n=== Creating Tumor-Focused Summary Slide ===")
+            summary_slide = self.create_tumor_focused_summary_slide(
+                contrast_type=contrast_type,
+                num_slices=summary_slices,
+                window_level=window_level,
+                window_width=window_width,
+                colormap=colormap,
+                tumor_color=tumor_color,
+                tumor_alpha=tumor_alpha,
+                show_contour=show_contour,
+                contour_width=contour_width,
+                contour_style=contour_style
+            )
+        elif create_summary_slide and not self.segmentation_folder:
+            print("Note: Skipping summary slide creation (no segmentation data)")
+        
+        # Create animated GIF from the original flipbook slides (excluding summary)
+        animated_gif = None
+        if create_animated_gif:
+            print(f"\n=== Creating Animated GIF ===")
+            gif_path = os.path.join(self.output_folder, f"flipbook_animation_{contrast_type}.gif")
+            
+            # Use enhanced GIF creation with progress indicators
+            animated_gif = self.create_enhanced_animated_gif(
+                slide_files=slide_files,  # Only use original flipbook slides, not summary
+                output_path=gif_path,
+                duration=gif_duration,
+                loop=0,  # Infinite loop
+                add_progress_bar=True,
+                add_frame_numbers=True
+            )
+        
+        # Prepare return results
+        results = {
+            'slide_files': slide_files,
+            'slide_count': len(slide_files),
+            'summary_slide': summary_slide,
+            'animated_gif': animated_gif,
+            'output_folder': self.output_folder
+        }
+        
+        # Print summary
+        print(f"\n✅ Complete flipbook package created:")
+        print(f"   - {len(slide_files)} individual slides")
+        if summary_slide:
+            print(f"   - Tumor evolution summary slide")
+        if animated_gif:
+            print(f"   - Animated GIF visualization")
+        print(f"   - All files saved in: {self.output_folder}")
+        
+        return results
     
     def generate_all_contrast_flipbooks(self, rows=3, cols=5, 
                                        window_level=None, window_width=None,
                                        colormap='gray', tumor_color='red',
                                        tumor_alpha=0.5, show_contour=True, 
-                                       contour_width=2, contour_style='solid'):
+                                       contour_width=2, contour_style='solid',
+                                       create_summary_slide=True, create_animated_gif=True,
+                                       gif_duration=1000, summary_slices=4):
         """Generate flipbooks for all available contrast types with tumor overlay"""
         self.find_timepoint_folders()
         self.find_contrast_types()
@@ -668,21 +1091,31 @@ class BrainFlipbookGenerator:
             original_output = self.output_folder
             self.output_folder = contrast_output_folder
             
-            slide_files = self.generate_flipbook(
+            flipbook_results = self.generate_flipbook(
                 contrast_type=contrast, rows=rows, cols=cols,
                 window_level=window_level, window_width=window_width,
                 colormap=colormap, tumor_color=tumor_color,
                 tumor_alpha=tumor_alpha, show_contour=show_contour,
-                contour_width=contour_width, contour_style=contour_style
+                contour_width=contour_width, contour_style=contour_style,
+                create_summary_slide=create_summary_slide, 
+                create_animated_gif=create_animated_gif,
+                gif_duration=gif_duration, summary_slices=summary_slices
             )
             
             # Restore original output folder
             self.output_folder = original_output
             
-            results[contrast] = {
-                'slide_files': slide_files,
-                'output_folder': contrast_output_folder
-            }
+            # Handle both old (list) and new (dict) return formats
+            if isinstance(flipbook_results, dict):
+                results[contrast] = flipbook_results
+                results[contrast]['output_folder'] = contrast_output_folder
+            else:
+                # Legacy format (list of slide files)
+                results[contrast] = {
+                    'slide_files': flipbook_results,
+                    'slide_count': len(flipbook_results) if flipbook_results else 0,
+                    'output_folder': contrast_output_folder
+                }
         
         print(f"\n=== ALL FLIPBOOKS GENERATED SUCCESSFULLY ===")
         print(f"Generated {len(results)} flipbooks for contrast types: {list(results.keys())}")
@@ -690,8 +1123,16 @@ class BrainFlipbookGenerator:
         
         # Print absolute paths for verification
         for contrast, result in results.items():
-            if result['slide_files']:
-                print(f"  {contrast}: {len(result['slide_files'])} slides in {os.path.abspath(result['output_folder'])}")
+            slide_count = result.get('slide_count', len(result.get('slide_files', [])))
+            if slide_count > 0:
+                extras = []
+                if result.get('summary_slide'):
+                    extras.append("summary slide")
+                if result.get('animated_gif'):
+                    extras.append("animated GIF")
+                
+                extras_text = f" + {', '.join(extras)}" if extras else ""
+                print(f"  {contrast}: {slide_count} slides{extras_text} in {os.path.abspath(result['output_folder'])}")
         
         return results
     
@@ -699,7 +1140,9 @@ class BrainFlipbookGenerator:
                                                    window_level=None, window_width=None,
                                                    colormap='gray', tumor_color='red',
                                                    tumor_alpha=0.5, show_contour=True, 
-                                                   contour_width=2, contour_style='solid', create_pptx=True):
+                                                   contour_width=2, contour_style='solid', create_pptx=True,
+                                                   create_summary_slide=True, create_animated_gif=True,
+                                                   gif_duration=1000, summary_slices=4):
         """Generate flipbook slides for all available contrast types with optional PPTX output"""
         self.find_timepoint_folders()
         self.find_contrast_types()
@@ -731,6 +1174,39 @@ class BrainFlipbookGenerator:
                 contour_width=contour_width, contour_style=contour_style
             )
             
+            # Create tumor-focused summary slide if requested
+            summary_slide = None
+            if create_summary_slide and self.segmentation_folder and slide_files:
+                print(f"  Creating tumor-focused summary slide for {contrast}...")
+                summary_slide = self.create_tumor_focused_summary_slide(
+                    contrast_type=contrast,
+                    num_slices=summary_slices,
+                    window_level=window_level,
+                    window_width=window_width,
+                    colormap=colormap,
+                    tumor_color=tumor_color,
+                    tumor_alpha=tumor_alpha,
+                    show_contour=show_contour,
+                    contour_width=contour_width,
+                    contour_style=contour_style
+                )
+            elif create_summary_slide and not self.segmentation_folder:
+                print(f"  Note: Skipping summary slide for {contrast} (no segmentation data)")
+            
+            # Create animated GIF if requested
+            animated_gif = None
+            if create_animated_gif and slide_files:
+                print(f"  Creating animated GIF for {contrast}...")
+                gif_path = os.path.join(contrast_output_folder, f"flipbook_animation_{contrast}.gif")
+                animated_gif = self.create_enhanced_animated_gif(
+                    slide_files=slide_files,
+                    output_path=gif_path,
+                    duration=gif_duration,
+                    loop=0,
+                    add_progress_bar=True,
+                    add_frame_numbers=True
+                )
+            
             # Generate PowerPoint if requested and available
             pptx_file = None
             if create_pptx and PPTX_AVAILABLE and slide_files:
@@ -745,7 +1221,9 @@ class BrainFlipbookGenerator:
                 'slide_files': slide_files,
                 'output_folder': contrast_output_folder,
                 'slide_count': len(slide_files),
-                'pptx_file': pptx_file
+                'pptx_file': pptx_file,
+                'summary_slide': summary_slide,
+                'animated_gif': animated_gif
             }
         
         print(f"\n=== ALL FLIPBOOK SLIDES GENERATED SUCCESSFULLY ===")
@@ -754,15 +1232,35 @@ class BrainFlipbookGenerator:
         
         # Print absolute paths for verification
         pptx_count = 0
+        summary_count = 0
+        gif_count = 0
         for contrast, result in results.items():
             if result['slide_files']:
-                print(f"  {contrast}: {len(result['slide_files'])} slides in {os.path.abspath(result['output_folder'])}")
+                extras = []
+                if result.get('summary_slide'):
+                    extras.append("summary slide")
+                    summary_count += 1
+                if result.get('animated_gif'):
+                    extras.append("animated GIF")
+                    gif_count += 1
                 if result.get('pptx_file'):
-                    print(f"    PowerPoint: {os.path.abspath(result['pptx_file'])}")
+                    extras.append("PowerPoint")
                     pptx_count += 1
+                
+                extras_text = f" + {', '.join(extras)}" if extras else ""
+                print(f"  {contrast}: {len(result['slide_files'])} slides{extras_text} in {os.path.abspath(result['output_folder'])}")
         
+        # Print additional feature counts
+        features = []
+        if summary_count > 0:
+            features.append(f"{summary_count} tumor summary slide{'s' if summary_count > 1 else ''}")
+        if gif_count > 0:
+            features.append(f"{gif_count} animated GIF{'s' if gif_count > 1 else ''}")
         if pptx_count > 0:
-            print(f"\n🎉 Generated {pptx_count} PowerPoint flipbooks ready for presentation!")
+            features.append(f"{pptx_count} PowerPoint flipbook{'s' if pptx_count > 1 else ''}")
+            
+        if features:
+            print(f"\n🎉 Enhanced features generated: {', '.join(features)}!")
         
         return results
     
