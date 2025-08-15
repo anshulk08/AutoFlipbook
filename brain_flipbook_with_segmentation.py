@@ -24,8 +24,11 @@ class BrainFlipbookGenerator:
         
         Parameters:
         - registered_folder: Path to folder containing timepoint subfolders (e.g., 5885, 5972, 6070)
-        - segmentation_folder: Path to folder containing segmentation maps (same structure as registered_folder)
+                           Also looks for transformed segmentations in <timepoint>/segmentations/ subfolders
+        - segmentation_folder: Path to folder containing original segmentation maps (optional fallback)
         - output_folder: Path to output folder for flipbooks
+        
+        Note: Prioritizes transformed segmentations in registered_folder over original segmentations
         """
         self.registered_folder = registered_folder
         self.segmentation_folder = segmentation_folder
@@ -113,12 +116,34 @@ class BrainFlipbookGenerator:
             return None
     
     def get_segmentation_file(self, timepoint_folder):
-        """Get the segmentation file for a specific timepoint"""
+        """Get the segmentation file for a specific timepoint
+        
+        First checks for transformed segmentations in the registered folder,
+        then falls back to original segmentations in the segmentation folder.
+        """
         if not self.segmentation_folder:
             return None
             
         folder_name = os.path.basename(timepoint_folder['folder'])
         
+        # PRIORITY 1: Look for transformed segmentations in the registered folder
+        # These are automatically aligned with the registered images
+        registered_seg_path = os.path.join(timepoint_folder['folder'], 'segmentations')
+        if os.path.exists(registered_seg_path):
+            # Look for transformed segmentation file
+            transformed_patterns = [
+                f"{folder_name}_seg_registered.nii*",
+                "*_seg_registered.nii*",
+                "*.nii*"
+            ]
+            
+            for pattern in transformed_patterns:
+                files = glob.glob(os.path.join(registered_seg_path, pattern))
+                if files:
+                    print(f"Found transformed segmentation: {files[0]}")
+                    return files[0]
+        
+        # PRIORITY 2: Fall back to original segmentation folder (legacy support)
         # First, try looking for files in a subfolder structure
         seg_folder_path = os.path.join(self.segmentation_folder, folder_name)
         
@@ -151,7 +176,7 @@ class BrainFlipbookGenerator:
         for pattern in direct_patterns:
             files = glob.glob(os.path.join(self.segmentation_folder, pattern))
             if files:
-                print(f"Found segmentation file: {files[0]}")
+                print(f"Found original segmentation: {files[0]} (note: not transformed)")
                 return files[0]
         
         print(f"Warning: No segmentation file found for timepoint {folder_name}")

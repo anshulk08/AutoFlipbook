@@ -101,14 +101,16 @@ flake8 .
 ### Pipeline Workflow
 
 1. **Image Registration**: Uses FSL FLIRT to co-register all timepoints to a reference
-2. **Flipbook Generation**: Creates HTML visualizations with mosaic layouts
-3. **Quantitative Assessment** (optional):
+2. **Segmentation Transformation**: Automatically applies the same transformation matrices to tumor segmentations for perfect alignment with registered images
+3. **Flipbook Generation**: Creates HTML visualizations with mosaic layouts using transformed segmentations
+4. **Quantitative Assessment** (optional):
    - Registration quality metrics (correlation, MI, SSIM, etc.)
    - Voxelwise difference maps with tumor growth/shrinkage visualization
    - Tumor contour evolution over time
    - Volume analysis and overlap metrics
-4. **Output Structure**:
+5. **Output Structure**:
    - `registered/` - Co-registered images
+     - `<timepoint>/segmentations/` - Transformed tumor segmentations (aligned with registered images)
    - `transformation_matrices/` - FLIRT .mat files
    - `flipbooks/` - HTML visualizations
    - `logs/` - Registration logs

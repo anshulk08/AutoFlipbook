@@ -340,7 +340,236 @@ class BrainRegistrationPipeline:
         
         return registration_results
     
-    def register_all_timepoints(self, registration_dof=6, skull_strip=False, bias_correct=False):
+    def transform_segmentation(self, segmentation_file, matrix_file, reference_file, output_file):
+        """
+        Transform a segmentation file using a transformation matrix from image registration
+        
+        Parameters:
+        - segmentation_file: Path to input segmentation file
+        - matrix_file: Path to transformation matrix (.mat file) from FLIRT registration
+        - reference_file: Path to reference image (for space definition)
+        - output_file: Path to output transformed segmentation
+        
+        Returns:
+        - dict: Result information with success status
+        """
+        try:
+            # Use FLIRT to apply the transformation to the segmentation
+            # Use nearest neighbor interpolation to preserve label values
+            flirt_cmd = [
+                'flirt',
+                '-in', segmentation_file,
+                '-ref', reference_file,
+                '-out', output_file,
+                '-init', matrix_file,      # Use existing transformation matrix
+                '-applyxfm',               # Apply transformation (don't compute new one)
+                '-interp', 'nearestneighbour'  # Preserve segmentation labels
+            ]
+            
+            # Create log file for segmentation transformation
+            log_file = output_file.replace('.nii.gz', '_transform.log').replace('.nii', '_transform.log')
+            
+            print(f"    Transforming segmentation: {os.path.basename(segmentation_file)}")
+            with open(log_file, 'w') as log:
+                result = subprocess.run(flirt_cmd, 
+                                      stdout=log, 
+                                      stderr=subprocess.STDOUT, 
+                                      text=True, 
+                                      timeout=120)  # 2 minute timeout
+            
+            if result.returncode == 0:
+                print(f"      ✓ Segmentation transformation successful")
+                return {
+                    'success': True,
+                    'input_file': segmentation_file,
+                    'output_file': output_file,
+                    'matrix_file': matrix_file,
+                    'log_file': log_file
+                }
+            else:
+                print(f"      ✗ Segmentation transformation failed (return code: {result.returncode})")
+                return {
+                    'success': False,
+                    'error': f"FLIRT returned code {result.returncode}",
+                    'log_file': log_file
+                }
+                
+        except subprocess.TimeoutExpired:
+            print(f"      ✗ Segmentation transformation timed out")
+            return {
+                'success': False,
+                'error': "Transformation timed out"
+            }
+        except Exception as e:
+            print(f"      ✗ Segmentation transformation error: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def transform_segmentations_for_timepoint(self, timepoint_folder, registration_results, segmentation_folder):
+        """
+        Transform all segmentations for a timepoint using the registration matrices
+        
+        Parameters:
+        - timepoint_folder: Timepoint folder info
+        - registration_results: Results from image registration containing matrix files
+        - segmentation_folder: Path to folder containing original segmentations
+        
+        Returns:
+        - dict: Transformation results for each available segmentation
+        """
+        tp_name = timepoint_folder['folder_name']
+        segmentation_results = {}
+        
+        if not segmentation_folder:
+            return segmentation_results
+            
+        # Look for segmentation file for this timepoint
+        seg_folder_path = os.path.join(segmentation_folder, tp_name)
+        if not os.path.exists(seg_folder_path):
+            print(f"    No segmentation folder found for {tp_name}")
+            return segmentation_results
+            
+        # Find segmentation files (look for common names)
+        seg_patterns = ['tumor_seg.nii.gz', 'tumor_seg.nii', 'seg.nii.gz', 'seg.nii', '*.nii.gz', '*.nii']
+        segmentation_file = None
+        
+        for pattern in seg_patterns:
+            files = glob.glob(os.path.join(seg_folder_path, pattern))
+            if files:
+                segmentation_file = files[0]  # Take the first match
+                break
+                
+        if not segmentation_file:
+            print(f"    No segmentation file found for {tp_name}")
+            return segmentation_results
+            
+        print(f"    Found segmentation: {os.path.basename(segmentation_file)}")
+        
+        # Create transformed segmentations folder
+        transformed_seg_folder = os.path.join(self.registered_folder, tp_name, 'segmentations')
+        os.makedirs(transformed_seg_folder, exist_ok=True)
+        
+        # Transform segmentation using each contrast's transformation matrix
+        # We'll use the T1CE matrix if available, otherwise the first successful registration
+        preferred_contrasts = ['T1CE', 'T1', 'T2', 'FLAIR']  # Order of preference
+        matrix_file = None
+        reference_file = None
+        contrast_used = None
+        
+        # Find the best transformation matrix to use
+        for contrast in preferred_contrasts:
+            if contrast in registration_results and registration_results[contrast]['success']:
+                matrix_file = registration_results[contrast]['matrix_file']
+                reference_file = self.reference_files.get(contrast)
+                contrast_used = contrast
+                break
+                
+        # If no preferred contrast found, use any successful registration
+        if not matrix_file:
+            for contrast, result in registration_results.items():
+                if result['success']:
+                    matrix_file = result['matrix_file']
+                    reference_file = self.reference_files.get(contrast)
+                    contrast_used = contrast
+                    break
+                    
+        if not matrix_file or not reference_file:
+            print(f"    No valid transformation matrix found for {tp_name}")
+            return segmentation_results
+            
+        # Define output file for transformed segmentation
+        output_file = os.path.join(transformed_seg_folder, f"{tp_name}_seg_registered.nii.gz")
+        
+        # Skip if already exists
+        if os.path.exists(output_file):
+            print(f"    Transformed segmentation already exists, skipping")
+            segmentation_results['tumor_seg'] = {
+                'success': True,
+                'input_file': segmentation_file,
+                'output_file': output_file,
+                'matrix_file': matrix_file,
+                'contrast_used': contrast_used,
+                'skipped': True
+            }
+            return segmentation_results
+            
+        # Transform the segmentation
+        print(f"    Using {contrast_used} transformation matrix")
+        transform_result = self.transform_segmentation(
+            segmentation_file=segmentation_file,
+            matrix_file=matrix_file,
+            reference_file=reference_file,
+            output_file=output_file
+        )
+        
+        transform_result['contrast_used'] = contrast_used
+        segmentation_results['tumor_seg'] = transform_result
+        
+        return segmentation_results
+    
+    def copy_baseline_segmentation(self, timepoint_folder, segmentation_folder):
+        """
+        Copy baseline (reference) segmentation to the registered folder
+        
+        Parameters:
+        - timepoint_folder: Reference timepoint folder info
+        - segmentation_folder: Path to folder containing original segmentations
+        
+        Returns:
+        - dict: Copy results for the baseline segmentation
+        """
+        tp_name = timepoint_folder['folder_name']
+        segmentation_results = {}
+        
+        if not segmentation_folder:
+            return segmentation_results
+            
+        # Look for segmentation file for the baseline timepoint
+        seg_folder_path = os.path.join(segmentation_folder, tp_name)
+        if not os.path.exists(seg_folder_path):
+            print(f"    No segmentation folder found for baseline {tp_name}")
+            return segmentation_results
+            
+        # Find segmentation files (look for common names)
+        seg_patterns = ['tumor_seg.nii.gz', 'tumor_seg.nii', 'seg.nii.gz', 'seg.nii', '*.nii.gz', '*.nii']
+        segmentation_file = None
+        
+        for pattern in seg_patterns:
+            files = glob.glob(os.path.join(seg_folder_path, pattern))
+            if files:
+                segmentation_file = files[0]  # Take the first match
+                break
+                
+        if not segmentation_file:
+            print(f"    No segmentation file found for baseline {tp_name}")
+            return segmentation_results
+            
+        print(f"    Found baseline segmentation: {os.path.basename(segmentation_file)}")
+        
+        # Create segmentations folder in registered output
+        transformed_seg_folder = os.path.join(self.registered_folder, tp_name, 'segmentations')
+        os.makedirs(transformed_seg_folder, exist_ok=True)
+        
+        # Define output file for baseline segmentation
+        output_file = os.path.join(transformed_seg_folder, f"{tp_name}_seg_registered.nii.gz")
+        
+        # Copy baseline segmentation (no transformation needed)
+        if not os.path.exists(output_file):
+            shutil.copy2(segmentation_file, output_file)
+            print(f"      ✓ Baseline segmentation copied")
+            
+        segmentation_results['tumor_seg'] = {
+            'success': True,
+            'input_file': segmentation_file,
+            'output_file': output_file,
+            'is_baseline': True
+        }
+        
+        return segmentation_results
+    
+    def register_all_timepoints(self, registration_dof=6, skull_strip=False, bias_correct=False, segmentation_folder=None):
         """
         Register all timepoints to the reference following paper methodology
         
@@ -349,6 +578,7 @@ class BrainRegistrationPipeline:
                            Paper recommends 6-DOF rigid to preserve tumor size
         - skull_strip: Whether to perform skull stripping (optional per paper)
         - bias_correct: Whether to perform bias field correction (optional per paper)
+        - segmentation_folder: Path to folder containing tumor segmentations (optional)
         """
         if not self.timepoint_folders:
             self.find_timepoint_folders()
@@ -398,10 +628,25 @@ class BrainRegistrationPipeline:
                         }
                 
                 all_results[tp_name] = ref_results
+                
+                # Handle baseline segmentation (no transformation needed)
+                if segmentation_folder:
+                    print(f"  Copying baseline segmentation for {tp_name}...")
+                    baseline_seg_results = self.copy_baseline_segmentation(tp_folder, segmentation_folder)
+                    all_results[tp_name]['segmentations'] = baseline_seg_results
             else:
                 # Register to reference
                 results = self.register_timepoint(tp_folder, reference_tp, registration_dof)
                 all_results[tp_name] = results
+                
+                # Transform segmentations if available
+                if segmentation_folder:
+                    print(f"  Transforming segmentations for {tp_name}...")
+                    seg_results = self.transform_segmentations_for_timepoint(
+                        tp_folder, results, segmentation_folder
+                    )
+                    # Add segmentation results to the main results
+                    all_results[tp_name]['segmentations'] = seg_results
         
         # Print summary
         self.print_registration_summary(all_results)
@@ -414,25 +659,54 @@ class BrainRegistrationPipeline:
         
         total_registrations = 0
         successful_registrations = 0
+        total_segmentations = 0
+        successful_segmentations = 0
         
         for tp_name, tp_results in results.items():
             print(f"\nTimepoint {tp_name}:")
             for contrast, result in tp_results.items():
-                total_registrations += 1
-                if result['success']:
-                    successful_registrations += 1
-                    status = "✓ SUCCESS"
-                    if result.get('is_reference'):
-                        status += " (Reference)"
-                    elif result.get('skipped'):
-                        status += " (Skipped - already exists)"
+                # Handle segmentation results separately
+                if contrast == 'segmentations':
+                    # This is a nested segmentation results structure
+                    for seg_name, seg_result in result.items():
+                        total_segmentations += 1
+                        if seg_result.get('success', False):
+                            successful_segmentations += 1
+                            status = "✓ SUCCESS"
+                            if seg_result.get('is_baseline'):
+                                status += " (Baseline - copied)"
+                            elif seg_result.get('skipped'):
+                                status += " (Skipped - already exists)"
+                            else:
+                                contrast_used = seg_result.get('contrast_used', 'unknown')
+                                status += f" (Transformed using {contrast_used})"
+                        else:
+                            status = f"✗ FAILED ({seg_result.get('error', 'Unknown error')})"
+                        
+                        print(f"  {seg_name} segmentation: {status}")
                 else:
-                    status = f"✗ FAILED ({result.get('error', 'Unknown error')})"
-                
-                print(f"  {contrast}: {status}")
+                    # Handle normal registration results
+                    total_registrations += 1
+                    if result.get('success', False):
+                        successful_registrations += 1
+                        status = "✓ SUCCESS"
+                        if result.get('is_reference'):
+                            status += " (Reference)"
+                        elif result.get('skipped'):
+                            status += " (Skipped - already exists)"
+                    else:
+                        status = f"✗ FAILED ({result.get('error', 'Unknown error')})"
+                    
+                    print(f"  {contrast}: {status}")
         
+        # Print registration summary
         success_rate = (successful_registrations / total_registrations * 100) if total_registrations > 0 else 0
-        print(f"\nOverall: {successful_registrations}/{total_registrations} registrations successful ({success_rate:.1f}%)")
+        print(f"\nRegistration Overall: {successful_registrations}/{total_registrations} registrations successful ({success_rate:.1f}%)")
+        
+        # Print segmentation summary if any segmentations were processed
+        if total_segmentations > 0:
+            seg_success_rate = (successful_segmentations / total_segmentations * 100)
+            print(f"Segmentation Overall: {successful_segmentations}/{total_segmentations} segmentations successful ({seg_success_rate:.1f}%)")
         
         if successful_registrations > 0:
             print(f"\nRegistered images saved to: {self.registered_folder}")
@@ -482,7 +756,8 @@ class BrainRegistrationPipeline:
             registration_results = self.register_all_timepoints(
                 registration_dof=registration_dof,
                 skull_strip=skull_strip, 
-                bias_correct=bias_correct
+                bias_correct=bias_correct,
+                segmentation_folder=segmentation_folder
             )
             
             # Step 2: Generate flipbooks
