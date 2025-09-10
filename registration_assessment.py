@@ -591,13 +591,45 @@ class RegistrationAssessment:
         
         return results
     
+    def _find_optimal_tumor_slice(self, contrast_type='T1CE'):
+        """
+        Find the slice index with the largest tumor area across all timepoints
+        """
+        slice_tumor_volumes = {}
+        
+        for tp_folder in self.timepoint_folders:
+            timepoint_name = tp_folder['folder_name']
+            
+            # Load segmentation
+            seg_path = os.path.join(self.segmentation_folder, timepoint_name, 'tumor_seg.nii.gz')
+            if not os.path.exists(seg_path):
+                continue
+            
+            seg_data = nib.load(seg_path).get_fdata()
+            
+            # Calculate tumor volume for each slice
+            for z in range(seg_data.shape[2]):
+                slice_volume = np.sum(seg_data[:, :, z] > 0.5)
+                if z not in slice_tumor_volumes:
+                    slice_tumor_volumes[z] = 0
+                slice_tumor_volumes[z] += slice_volume
+        
+        if not slice_tumor_volumes:
+            return None
+        
+        # Find slice with maximum total tumor volume across timepoints
+        optimal_slice = max(slice_tumor_volumes.keys(), key=lambda k: slice_tumor_volumes[k])
+        print(f"Selected optimal slice {optimal_slice} for contour evolution (total tumor volume: {slice_tumor_volumes[optimal_slice]} voxels)")
+        
+        return optimal_slice
+    
     def create_contour_evolution_visualization(self, contrast_type='T1CE', slice_idx=None):
         """
         Create tumor contour evolution visualization over time
         
         Parameters:
         - contrast_type: Image contrast to use as background
-        - slice_idx: Specific slice to analyze (if None, uses middle slice)
+        - slice_idx: Specific slice to analyze (if None, finds optimal slice with tumor)
         """
         if not self.segmentation_folder:
             print("Segmentation folder required for contour evolution")
@@ -619,7 +651,10 @@ class RegistrationAssessment:
         first_data = first_img.get_fdata()
         
         if slice_idx is None:
-            slice_idx = first_data.shape[2] // 2
+            # Find optimal slice by looking for tumor across all timepoints
+            slice_idx = self._find_optimal_tumor_slice(contrast_type)
+            if slice_idx is None:
+                slice_idx = first_data.shape[2] // 2  # fallback to middle slice
         
         # Create figure
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
@@ -736,9 +771,10 @@ class RegistrationAssessment:
         plt.tight_layout()
         return fig
     
-    def generate_volume_analysis(self, contrast_type='T1CE'):
+    def generate_volume_analysis(self):
         """
         Generate comprehensive tumor volume analysis over time
+        Note: Volume analysis is modality-independent since tumor volumes don't change with image contrast
         """
         if not self.segmentation_folder:
             print("Segmentation folder required for volume analysis")
@@ -755,24 +791,33 @@ class RegistrationAssessment:
                 print(f"Skipping {timepoint_name} - no segmentation")
                 continue
             
-            seg_data = nib.load(seg_path).get_fdata()
+            seg_img = nib.load(seg_path)
+            seg_data = seg_img.get_fdata()
             
-            # Calculate volume (assuming 1mm³ voxels, adjust if needed)
-            volume_voxels = np.sum(seg_data > 0)
-            volume_ml = volume_voxels * 0.001  # Convert to mL (assuming 1mm³ voxels)
+            # Get actual voxel dimensions from header for accurate volume calculation
+            header = seg_img.header
+            voxel_dims = header.get_zooms()[:3]  # x, y, z dimensions in mm
+            voxel_volume_mm3 = np.prod(voxel_dims)
+            
+            # Calculate volume with proper voxel dimensions
+            volume_voxels = np.sum(seg_data > 0.5)
+            volume_mm3 = volume_voxels * voxel_volume_mm3
+            volume_ml = volume_mm3 / 1000.0  # Convert mm³ to mL
             
             volume_data.append({
                 'timepoint': timepoint_name,
                 'volume_voxels': volume_voxels,
-                'volume_ml': volume_ml
+                'volume_mm3': volume_mm3,
+                'volume_ml': volume_ml,
+                'voxel_dims': voxel_dims
             })
         
         if len(volume_data) < 2:
             print("Need at least 2 timepoints with segmentations for volume analysis")
             return None
         
-        # Create volume evolution plot
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        # Create volume evolution plot with better title spacing
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7))
         fig.patch.set_facecolor('white')
         
         timepoints = [d['timepoint'] for d in volume_data]
@@ -780,7 +825,7 @@ class RegistrationAssessment:
         
         # Plot 1: Absolute volumes
         ax1.plot(timepoints, volumes_ml, 'o-', linewidth=2, markersize=8, color='red')
-        ax1.set_title('Tumor Volume Over Time', fontsize=14, fontweight='bold')
+        ax1.set_title('Tumor Volume Over Time', fontsize=14, fontweight='bold', pad=20)
         ax1.set_xlabel('Timepoint', fontsize=12)
         ax1.set_ylabel('Volume (mL)', fontsize=12)
         ax1.grid(True, alpha=0.3)
@@ -792,18 +837,19 @@ class RegistrationAssessment:
         
         colors = ['green' if x >= 0 else 'red' for x in relative_changes]
         ax2.bar(timepoints, relative_changes, color=colors, alpha=0.7)
-        ax2.set_title('Relative Volume Change from Baseline', fontsize=14, fontweight='bold')
+        ax2.set_title('Relative Volume Change from Baseline', fontsize=14, fontweight='bold', pad=20)
         ax2.set_xlabel('Timepoint', fontsize=12)
         ax2.set_ylabel('Volume Change (%)', fontsize=12)
         ax2.axhline(y=0, color='black', linestyle='-', alpha=0.5)
         ax2.grid(True, alpha=0.3)
         ax2.tick_params(axis='x', rotation=45)
         
-        plt.tight_layout()
+        # Adjust layout to prevent title/date overlap
+        plt.tight_layout(pad=2.0)
         
-        # Save volume data to CSV
+        # Save volume data to CSV (single file, no contrast type in name)
         df = pd.DataFrame(volume_data)
-        csv_file = os.path.join(self.output_folder, f'tumor_volumes_{contrast_type}.csv')
+        csv_file = os.path.join(self.output_folder, 'tumor_volumes.csv')
         df.to_csv(csv_file, index=False)
         
         print(f"Volume analysis saved to: {csv_file}")
@@ -828,6 +874,9 @@ class RegistrationAssessment:
         
         results = {}
         
+        # Perform volume analysis once (modality-independent)
+        volume_analysis_done = False
+        
         for contrast in contrast_types:
             print(f"\n--- Analyzing {contrast} ---")
             
@@ -839,7 +888,7 @@ class RegistrationAssessment:
             print("Creating voxelwise difference maps...")
             diff_maps = self.generate_all_difference_maps(contrast, reference_idx, colormap_style)
             
-            # 3. Contour evolution
+            # 3. Contour evolution (per contrast for background image)
             if self.segmentation_folder:
                 print("Creating contour evolution visualization...")
                 contour_fig = self.create_contour_evolution_visualization(contrast)
@@ -848,21 +897,23 @@ class RegistrationAssessment:
                     contour_fig.savefig(contour_file, dpi=300, bbox_inches='tight', facecolor='black')
                     plt.close(contour_fig)
                     print(f"Contour evolution saved: {contour_file}")
-                
-                # 4. Volume analysis
-                print("Performing tumor volume analysis...")
-                volume_result = self.generate_volume_analysis(contrast)
-                if volume_result:
-                    volume_fig, volume_df = volume_result
-                    volume_file = os.path.join(self.output_folder, f'volume_analysis_{contrast}.png')
-                    volume_fig.savefig(volume_file, dpi=300, bbox_inches='tight', facecolor='white')
-                    plt.close(volume_fig)
-                    print(f"Volume analysis saved: {volume_file}")
             
             results[contrast] = {
                 'metrics_table': metrics_df,
                 'difference_maps': diff_maps
             }
+        
+        # 4. Volume analysis (once per pipeline, modality-independent)
+        if self.segmentation_folder and not volume_analysis_done:
+            print("Performing tumor volume analysis (modality-independent)...")
+            volume_result = self.generate_volume_analysis()
+            if volume_result:
+                volume_fig, volume_df = volume_result
+                volume_file = os.path.join(self.output_folder, 'volume_analysis.png')
+                volume_fig.savefig(volume_file, dpi=300, bbox_inches='tight', facecolor='white')
+                plt.close(volume_fig)
+                print(f"Volume analysis saved: {volume_file}")
+                volume_analysis_done = True
         
         print(f"\n=== ASSESSMENT COMPLETE ===")
         print(f"All results saved to: {self.output_folder}")

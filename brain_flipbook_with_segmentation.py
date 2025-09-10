@@ -281,15 +281,42 @@ class BrainFlipbookGenerator:
         if seg_data is not None and len(seg_data.shape) == 4:
             seg_data = seg_data[:, :, :, 0]  # Take first volume if 4D
         
-        # Get slice indices
+        # Get slice indices - prioritize tumor-containing slices if segmentation is available
         total_slices = data.shape[2]
-        # Select slices from central 60% of the volume to avoid edges
-        start_idx = int(total_slices * 0.2)
-        end_idx = int(total_slices * 0.8)
-
-        # Ensure enough slices
         num_slices = rows * cols
-        slice_indices = np.linspace(start_idx, end_idx, num_slices, dtype=int)
+        
+        if seg_data is not None:
+            # Find slices with tumor
+            tumor_slices = []
+            for z in range(total_slices):
+                slice_volume = np.sum(seg_data[:, :, z] > 0.5)
+                if slice_volume > 25:  # Minimum 25 voxels to be considered a tumor slice
+                    tumor_slices.append(z)
+            
+            if len(tumor_slices) >= num_slices:
+                # If we have enough tumor slices, select evenly from them
+                slice_indices = np.linspace(0, len(tumor_slices)-1, num_slices, dtype=int)
+                slice_indices = [tumor_slices[i] for i in slice_indices]
+                print(f"Selected {num_slices} tumor-containing slices from {len(tumor_slices)} available")
+            elif len(tumor_slices) > 0:
+                # If we have some tumor slices but not enough, use all tumor slices and fill with adjacent slices
+                tumor_range_start = max(0, min(tumor_slices) - 5)
+                tumor_range_end = min(total_slices, max(tumor_slices) + 6)
+                extended_range = list(range(tumor_range_start, tumor_range_end))
+                slice_indices = np.linspace(0, len(extended_range)-1, num_slices, dtype=int)
+                slice_indices = [extended_range[i] for i in slice_indices]
+                print(f"Using {len(tumor_slices)} tumor slices, extended range to get {num_slices} total slices")
+            else:
+                # Fallback to central slices if no tumor found
+                start_idx = int(total_slices * 0.2)
+                end_idx = int(total_slices * 0.8)
+                slice_indices = np.linspace(start_idx, end_idx, num_slices, dtype=int)
+                print("No tumor slices found, using central brain slices")
+        else:
+            # No segmentation available - use central slices
+            start_idx = int(total_slices * 0.2)
+            end_idx = int(total_slices * 0.8)
+            slice_indices = np.linspace(start_idx, end_idx, num_slices, dtype=int)
         
         # Create figure
         fig = plt.figure(figsize=(cols * 3, rows * 3))
@@ -702,7 +729,7 @@ class BrainFlipbookGenerator:
             axes = axes.reshape(-1, 1)
             
         fig.suptitle(f'Tumor Evolution Summary - {contrast_type}', 
-                     fontsize=20, color='white', y=0.98)
+                     fontsize=20, color='white', y=0.92)
         
         # Process each slice (row) and timepoint (column)
         for row, slice_idx in enumerate(selected_slices):
@@ -762,7 +789,7 @@ class BrainFlipbookGenerator:
                 
                 # Add timepoint label on top row (columns are timepoints)
                 if row == 0:
-                    ax.text(0.5, 1.05, f'{tp_data["name"]}{volume_text}', 
+                    ax.text(0.5, 1.02, f'{tp_data["name"]}{volume_text}', 
                            transform=ax.transAxes, fontsize=10, color='white', 
                            ha='center', va='bottom', fontweight='bold')
                 
@@ -773,9 +800,9 @@ class BrainFlipbookGenerator:
                            fontsize=12, color='white', ha='right', va='center',
                            fontweight='bold')
         
-        # Adjust layout
+        # Adjust layout with more space for title and labels
         plt.tight_layout()
-        plt.subplots_adjust(top=0.95, hspace=0.1, wspace=0.05)
+        plt.subplots_adjust(top=0.88, hspace=0.12, wspace=0.05)
         
         # Save the summary slide
         summary_file = os.path.join(self.output_folder, f"tumor_summary_{contrast_type}.png")
